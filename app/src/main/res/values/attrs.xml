@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- specify attributes so I can use these with themes -->
+    <attr name="mic_image" format="reference"/>
+    <attr name="note_image" format="reference"/>
+    <attr name="picture_image" format="reference"/>
+    <attr name="customTextColor" format="reference"/>
+    <attr name="accentColor" format="reference"/>
+    <attr name="altAccentColor" format="reference"/>
+</resources>

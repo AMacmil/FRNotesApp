@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <color name="primary_light">#333333</color>
+    <color name="primary_dark_light">#000000</color>
+    <color name="secondary_light">#c4c4c4</color>
+    <color name="secondary_dark_light">#FFA000</color>
+    <color name="background_light">#F0FFFF</color>
+    <color name="accent">#4A90E2</color>
+    <color name="altAccent">#4A90E2</color>
+    <color name="dark_accent">#355E3B</color>
+    <color name="altDark_accent">#228B22</color>
+    <color name="notepad_light">#fffa66</color>
+    <color name="text_primary_light">#212121</color>
+    <color name="text_secondary_light">#212121</color>
+    <color name="error_light">#F44336</color>
+    <color name="primary_dark">#F5F5F5</color>
+    <color name="primary_light_dark">#000000</color>
+    <color name="secondary_dark">#464343</color>
+    <color name="secondary_light_dark">#F48FB1</color>
+    <color name="background_dark">#515151</color>
+    <color name="background_dark_alt">#181414</color>
+    <color name="notepad_dark">#666300</color>
+    <color name="text_primary_dark">#E0E0E0</color>
+    <color name="text_secondary_dark">#E0E0E0</color>
+    <color name="error_dark">#CF6679</color>
+</resources>

@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">FRNotesApp</string>
+    <string name="tab_page1">Home</string>
+    <string name="tab_page2">Notes</string>
+    <string name="tab_page3">Logs</string>
+    <string name="enter_your_note_here">Enter your note here</string>
+</resources>
