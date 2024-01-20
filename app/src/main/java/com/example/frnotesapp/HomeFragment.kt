@@ -2,6 +2,7 @@ package com.example.frnotesapp
 
 // Importing necessary Android and TensorFlow classes
 import android.app.Activity
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -26,7 +27,20 @@ import com.google.mlkit.vision.face.FaceDetectorOptions
 import kotlinx.coroutines.*
 import kotlin.coroutines.resume
 import android.widget.Toast
-import kotlin.math.abs
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import android.Manifest
+import androidx.camera.core.ImageAnalysis
+import android.graphics.ImageFormat
+import android.graphics.Rect
+import android.graphics.YuvImage
+import android.media.Image
+import androidx.annotation.OptIn
+import androidx.camera.core.ExperimentalGetImage
+import java.io.ByteArrayOutputStream
 
 // Fragment class for the first page/tab
 class HomeFragment : Fragment() {
@@ -37,6 +51,11 @@ class HomeFragment : Fragment() {
     private lateinit var tfliteMobilenet: Interpreter
     private lateinit var tfliteMobileFaceNet: Interpreter
     private lateinit var tfliteFaceNet: Interpreter
+
+    private lateinit var viewFinder: PreviewView
+
+    private var storedFeatureVector: FloatArray? = null
+
 
     // Function to load the TensorFlow Lite model from the assets
     private fun loadModelFile(activity: Activity, modelName: String): MappedByteBuffer {
@@ -91,6 +110,42 @@ class HomeFragment : Fragment() {
         return byteBuffer
     }
 
+    private val cameraPermissionRequestCode = 1001
+
+    private fun requestCameraPermission() {
+        Log.d("requestCameraPermission", "Requesting camera permission")
+        if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            Log.d("requestCameraPermission", "Camera permission not granted")
+            if (shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)) {
+                Toast.makeText(context, "Camera permission is needed to show the camera preview.", Toast.LENGTH_SHORT).show()
+            }
+            requestPermissions(arrayOf(Manifest.permission.CAMERA), cameraPermissionRequestCode)
+        } else {
+            Log.d("requestCameraPermission", "Camera permission already granted")
+            startCamera()
+        }
+    }
+
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        Log.d("onRequestPermissionsResult", "Permission result received")
+        when (requestCode) {
+            cameraPermissionRequestCode -> {
+                // If request is cancelled, the result arrays are empty.
+                if ((grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)) {
+                    Log.d("onRequestPermissionsResult", "Camera permission granted")
+                    startCamera()
+                } else {
+                    Log.d("onRequestPermissionsResult", "Camera permission denied")
+                    Toast.makeText(context, "Camera permission denied", Toast.LENGTH_SHORT).show()
+                }
+                return
+            }
+            // Other permission requests...
+        }
+    }
+
+
     // Lifecycle method for creating the view
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -112,6 +167,10 @@ class HomeFragment : Fragment() {
         //loadFacenetModel(requireActivity()) // I couldn't get this to work
         loadMobileFacenetModel(requireActivity())
 
+        processStoredImage()
+
+        viewFinder = view.findViewById(R.id.viewFinder)
+
         // Loading images as bitmaps - TODO these are for testing and need replaced with uploaded images
         val bitmap1 = BitmapFactory.decodeResource(resources, R.drawable.face_1)
         val bitmap2 = BitmapFactory.decodeResource(resources, R.drawable.face_2)
@@ -122,6 +181,11 @@ class HomeFragment : Fragment() {
         val bitmapB = BitmapFactory.decodeResource(resources, R.drawable.face_b)
         val bitmapC = BitmapFactory.decodeResource(resources, R.drawable.face_c)
         val bitmapD = BitmapFactory.decodeResource(resources, R.drawable.face_d)
+
+        val cameraVerificationButton = view.findViewById<Button>(R.id.cameraVerificationButton)
+        cameraVerificationButton.setOnClickListener {
+            requestCameraPermission()
+        }
 
         val preprocessMobilenetFVButton = view.findViewById<Button>(R.id.preprocessMobilenetFVButton)
         preprocessMobilenetFVButton.setOnClickListener {
@@ -316,6 +380,166 @@ class HomeFragment : Fragment() {
             performVerificationTest()
         }
     }// end onViewCreated
+
+    private fun processStoredImage() {
+        Log.d("processStoredImage", "Starting to process stored image")
+        val outputSize = 128 // Adjust this according to your model's output
+
+        CoroutineScope(Dispatchers.IO).launch {
+            Log.d("processStoredImage", "Inside coroutine")
+            val storedImageBitmap = BitmapFactory.decodeResource(resources, R.drawable.face_1)
+            Log.d("processStoredImage", "Image loaded")
+
+            // Assuming you have a method to crop the image to focus on the face
+            val croppedBitmap = cropAndPreprocessImage(storedImageBitmap, 112)
+            Log.d("processStoredImage", "Image cropped and preprocessed")
+
+            // Run model inference on reference image
+            val referenceImageOutput = Array(1) { FloatArray(outputSize) }
+            tfliteMobileFaceNet.run(croppedBitmap, referenceImageOutput)
+            Log.d("processStoredImage", "Model run on cropped image")
+
+            // Update any UI components or global variables on the main thread
+            withContext(Dispatchers.Main) {
+                storedFeatureVector = referenceImageOutput[0]
+                Log.d("processStoredImage", "Feature vector stored")
+            }
+    }}
+
+    @OptIn(ExperimentalGetImage::class) private fun startCamera() {
+        Log.d("startCamera", "Starting camera")
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(requireContext())
+
+        cameraProviderFuture.addListener({
+            // Used to bind the lifecycle of cameras to the lifecycle owner
+            val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
+
+            // Preview
+            val preview = Preview.Builder()
+                .build()
+                .also {
+                    it.setSurfaceProvider(viewFinder.surfaceProvider)
+                }
+
+            // Select back camera as a default
+            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+
+            val imageAnalysis = ImageAnalysis.Builder()
+                .build()
+                .also {
+                    it.setAnalyzer(ContextCompat.getMainExecutor(requireContext()), ImageAnalysis.Analyzer { imageProxy ->
+                        Log.e("imageAnalysis", "checkpoint 1")
+                        val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+                        val mediaImage = imageProxy.image
+                        Log.d("startCamera", "Image format: ${mediaImage?.format}")
+                        if (mediaImage != null) {
+                            Log.e("imageAnalysis", "checkpoint 2")
+                            val inputImage = InputImage.fromMediaImage(mediaImage, rotationDegrees)
+                            val detector = FaceDetection.getClient()
+                            detector.process(inputImage)
+                                .addOnSuccessListener { faces ->
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        for (face in faces) {
+                                            // Assuming only one face is detected and processed
+                                            val boundingBox = face.boundingBox
+                                            val croppedFaceBitmap = cropBitmap(mediaImage, boundingBox)
+                                            Log.e("imageAnalysis", "checkpoint 3")
+                                            // Preprocess and run the model on the cropped face
+                                            val preprocessedImage = cropAndPreprocessImage(croppedFaceBitmap, 112)
+                                            runMobileFaceNetOnCameraImage(preprocessedImage)
+                                        }
+                                    }
+                                }
+                                .addOnFailureListener { e ->
+                                    // Handle any errors during ML Kit face detection
+                                    Log.e("startCamera", "Face detection failed: ${e.message}")
+                                }
+                                .addOnCompleteListener {
+                                    // After done with the frame, you must close the imageProxy
+                                    imageProxy.close()
+                                    Log.e("imageAnalysis", "checkpoint 4")
+                                }
+                        } else {
+                            // Close the imageProxy if mediaImage is null
+                            imageProxy.close()
+                            Log.e("imageAnalysis", "checkpoint 5")
+                        }
+                    })
+                }
+
+            try {
+                // Unbind use cases before rebinding
+                cameraProvider.unbindAll()
+
+                // Bind use cases to camera
+                cameraProvider.bindToLifecycle(
+                    this, cameraSelector, preview, imageAnalysis)
+                    //this, cameraSelector, preview)
+                Log.e("imageAnalysis", "checkpoint 6")
+            } catch(exc: Exception) {
+                Log.e("Camera", "Use case binding failed", exc)
+            }
+
+        }, ContextCompat.getMainExecutor(requireContext()))
+    }
+
+    fun runMobileFaceNetOnCameraImage(face: ByteBuffer){
+        val outputSize = 128 // Adjust this according to your model's output
+
+        // Run model inference on new image
+        val newImageOutput = Array(1) { FloatArray(outputSize) }
+        tfliteMobileFaceNet.run(face, newImageOutput)
+        val newImageFeatures = newImageOutput[0]
+
+        var comparisonVector = FloatArray(outputSize)
+
+        if(storedFeatureVector != null){
+            comparisonVector = storedFeatureVector as FloatArray
+        }
+        // Compare feature vectors to determine a match
+        val similarity = calculateCosineSimilarity(newImageFeatures, comparisonVector)
+        val isMatch = similarity > MATCH_THRESHOLD
+
+        // Log the results for debugging
+        Log.d("VerificationTest", "Similarity: $similarity, Match: $isMatch")
+
+        // Show a toast message if a match is found
+        if (isMatch) {
+            Toast.makeText(context, "Match found!", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "No match found.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+
+    fun cropBitmap(image: Image, boundingBox: Rect): Bitmap {
+        val yBuffer = image.planes[0].buffer // Y
+        val vuBuffer = image.planes[2].buffer // VU
+
+        val ySize = yBuffer.remaining()
+        val vuSize = vuBuffer.remaining()
+
+        val nv21 = ByteArray(ySize + vuSize)
+
+        yBuffer.get(nv21, 0, ySize)
+        vuBuffer.get(nv21, ySize, vuSize)
+
+        val yuvImage = YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null)
+        val out = ByteArrayOutputStream()
+        yuvImage.compressToJpeg(Rect(0, 0, yuvImage.width, yuvImage.height), 100, out)
+
+        val imageBytes = out.toByteArray()
+        var bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+
+        // Rotate bitmap if necessary (based on image's rotationDegrees)
+        // For this, you need to pass rotationDegrees to this function and create a rotation matrix
+
+        // Crop the bitmap to the boundingBox
+        bitmap = Bitmap.createBitmap(bitmap, boundingBox.left, boundingBox.top, boundingBox.width(), boundingBox.height())
+
+        return bitmap
+    }
+
 
     private fun performVerificationTest() {
         CoroutineScope(Dispatchers.Main).launch {
