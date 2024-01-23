@@ -5,7 +5,7 @@
     android:orientation="vertical"
     android:background="?android:attr/windowBackground">
 
-    <Button
+  <!--  <Button
         android:id="@+id/preprocessMobilenetFVButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -26,6 +26,14 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Test Verification using MobileFacenet"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="1dp"/>-->
+
+    <Button
+        android:id="@+id/captureReferenceButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Capture Reference"
         android:layout_gravity="center_horizontal"
         android:layout_marginTop="1dp"/>
 

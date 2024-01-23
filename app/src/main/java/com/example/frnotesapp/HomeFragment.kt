@@ -60,6 +60,13 @@ class HomeFragment : Fragment() {
     // Vector to store features stored for verification reference
     private var storedFeatureVector: FloatArray? = null
 
+    private val cameraPermissionRequestCode = 1001
+
+    @Volatile
+    private var captureReferenceImage = false
+
+    @Volatile
+    private var stopCamera = false
 
     // Function to load the TensorFlow Lite model from the assets
     private fun loadModelFile(activity: Activity, modelName: String): MappedByteBuffer {
@@ -121,8 +128,6 @@ class HomeFragment : Fragment() {
     }
 
     //The following methods are for requesting permissions required for android so I can use the camera and probably storage later
-    private val cameraPermissionRequestCode = 1001
-
     private fun requestCameraPermission() {
         Log.d("requestCameraPermission", "Requesting camera permission")
         if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -155,7 +160,6 @@ class HomeFragment : Fragment() {
         }
     }
 
-
     // Lifecycle method for creating the view
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -173,16 +177,40 @@ class HomeFragment : Fragment() {
     // Lifecycle method called after the view is created
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        loadMobileFacenetModel(requireActivity())
+        loadPretrainedMobileFacenetModel(requireActivity())
+
+        //processStoredImage()
+
+        viewFinder = view.findViewById(R.id.viewFinder)
+
+        val cameraVerificationButton = view.findViewById<Button>(R.id.cameraVerificationButton)
+        cameraVerificationButton.setOnClickListener {
+            stopCamera = false
+            requestCameraPermission()
+        }
+
+        val captureReferenceButton = view.findViewById<Button>(R.id.captureReferenceButton)
+        captureReferenceButton.setOnClickListener {
+            stopCamera = false
+            captureReferenceImage = true
+            requestCameraPermission()
+        }
+    }// end onViewCreated
+
+/*override*//*
+ fun onViewCreatedOld(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
         loadMobilenetFVModel(requireActivity())
         //loadFacenetModel(requireActivity()) // I couldn't get this to work
         loadMobileFacenetModel(requireActivity())
         loadPretrainedMobileFacenetModel(requireActivity())
 
-        processStoredImage()
+        //processStoredImage()
 
         viewFinder = view.findViewById(R.id.viewFinder)
 
-        // Loading images as bitmaps - TODO these are for testing and need replaced with uploaded images
+        // Loading images as bitmaps - TODO - for testing and need replaced with uploaded images
         val bitmap1 = BitmapFactory.decodeResource(resources, R.drawable.face_1)
         val bitmap2 = BitmapFactory.decodeResource(resources, R.drawable.face_2)
         val bitmap3 = BitmapFactory.decodeResource(resources, R.drawable.face_3)
@@ -334,9 +362,10 @@ class HomeFragment : Fragment() {
         verificationTestButton.setOnClickListener {
             performVerificationTest()
         }
-    }// end onViewCreated
+    }// end onViewCreatedOld
+*/
 
-    private fun processStoredImage() {
+    private fun processStoredImageOld() {
         Log.d("processStoredImage", "Starting to process stored image")
         val outputSize = 128 // Adjust this according to your model's output
 
@@ -361,6 +390,52 @@ class HomeFragment : Fragment() {
             }
         }}
 
+    // method currently doesn't work
+    /*private fun processStoredImage() {
+        Log.d("processStoredImage", "Starting to process stored image")
+        val outputSize = 128 // Adjust this according to your model's output
+
+        CoroutineScope(Dispatchers.IO).launch {
+            Log.d("processStoredImage", "Inside coroutine")
+            val storedImageBitmap = BitmapFactory.decodeResource(resources, R.drawable.face_1)
+            Log.d("processStoredImage", "Image loaded")
+
+            // Convert Bitmap to Image (YUV format) for compatibility with cropBitmap
+            val storedImageYuv = convertBitmapToYuv(storedImageBitmap)
+            val rotationDegrees = 0 // Default rotation, adjust as needed
+
+            // Process image with ML Kit for face detection
+            val inputImage = InputImage.fromBitmap(storedImageBitmap, rotationDegrees)
+            val detector = FaceDetection.getClient()
+            detector.process(inputImage)
+                .addOnSuccessListener { faces ->
+                    if (faces.isNotEmpty()) {
+                        val face = faces[0] // Assuming only one face
+                        val boundingBox = face.boundingBox
+
+                        // Use cropBitmap method
+                        val croppedBitmap = cropBitmap(storedImageYuv, boundingBox, rotationDegrees)
+                        val preprocessedImage = preprocessImageMobileFacenet(croppedBitmap, 112)
+
+                        // Model inference
+                        val referenceImageOutput = Array(1) { FloatArray(outputSize) }
+                        tfliteMobileFaceNet.run(preprocessedImage, referenceImageOutput)
+
+                        // Update storedFeatureVector on the main thread
+                        withContext(Dispatchers.Main) {
+                            storedFeatureVector = referenceImageOutput[0]
+                            Log.d("processStoredImage", "Feature vector stored")
+                        }
+                    } else {
+                        Log.d("processStoredImage", "No face detected in stored image")
+                    }
+                }
+                .addOnFailureListener { e ->
+                    Log.e("processStoredImage", "Failed to process stored image: ${e.message}")
+                }
+        }
+    }*/
+
     fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
         val planeProxy = imageProxy.planes[0]
         val buffer = planeProxy.buffer
@@ -375,6 +450,115 @@ class HomeFragment : Fragment() {
     private lateinit var croppedFaceForVerification : Bitmap
 
     @OptIn(ExperimentalGetImage::class) private fun startCamera() {
+        Log.d("startCamera", "Starting camera")
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(requireContext())
+
+        cameraProviderFuture.addListener({
+            // Used to bind the lifecycle of cameras to the lifecycle owner
+            val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
+
+            // Preview
+            val preview = Preview.Builder()
+                .build()
+                .also {
+                    it.setSurfaceProvider(viewFinder.surfaceProvider)
+                }
+
+            // Select back camera as a default
+            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+            var frameSkipCounter = 0
+            val frameSkipRate = 50 // Skip every X frames
+            var rotationDegrees = 0
+            val imageAnalysis = ImageAnalysis.Builder()
+                .build()
+                .also {
+                    it.setAnalyzer(ContextCompat.getMainExecutor(requireContext()), ImageAnalysis.Analyzer { imageProxy ->
+                        if (stopCamera) {
+                            Log.e("STOPCAMERA", "stop camera is: $stopCamera")
+                            imageProxy.close()
+                            return@Analyzer
+                        }
+                        if (frameSkipCounter != 0 && (frameSkipCounter % frameSkipRate == 0 && !isModelRunning)) {
+                            //isModelRunning = true
+                            Log.e("imageAnalysis", "analysing image")
+                            rotationDegrees = imageProxy.imageInfo.rotationDegrees
+                            val mediaImage = imageProxy.image
+                            Log.d("startCamera", "Image format: ${mediaImage?.format}")
+                            if (mediaImage != null) {
+                                Log.e("imageAnalysis", "checkpoint 2")
+                                val inputImage = InputImage.fromMediaImage(mediaImage, rotationDegrees)
+                                val detector = FaceDetection.getClient()
+                                detector.process(inputImage)
+                                    .addOnSuccessListener { faces ->
+                                        if (faces.isNotEmpty()) {
+                                            // Assuming only one face is detected and processed
+                                            val boundingBox = faces[0].boundingBox
+                                            Log.d("VERIFICATION CROPPING STARTED", "cropping...")
+                                            croppedFaceForVerification = cropBitmap(mediaImage, boundingBox, rotationDegrees)
+                                            Log.d("VERIFICATION CROPPING COMPLETE", "cropping finished")
+                                            val preprocessedImage = preprocessImageMobileFacenet(croppedFaceForVerification, 112)
+                                            // Preprocess and run the model on the cropped face
+                                            //val preprocessedImage = cropAndPreprocessImage(croppedFaceForVerification, 112)
+
+                                                runMobileFaceNetOnCameraImage(preprocessedImage)
+
+                                            // Once done, set the flag back to false
+                                            Log.d("FACEDETECTED", "isModelRunning = false")
+                                        } else {
+                                            isModelRunning = false
+                                            Log.d("DETECTION", "No face detected")
+                                        }
+                                        Log.d("DETECTION", "onSuccessListener entered: detection attempt complete")
+                                    }
+                                    .addOnFailureListener { e ->
+                                        // Handle any errors during ML Kit face detection
+                                        Log.e("DETECTION", "onFailureListener entered: ${e.message}")
+                                    }
+                                    .addOnCompleteListener {
+                                        // After done with the frame, you must close the imageProxy
+                                        imageProxy.close()
+                                        Log.e("DETECTION", "onCompleteListener entered")
+                                    }
+                            } else {
+                                // Close the imageProxy if mediaImage is null
+                                imageProxy.close()
+                                Log.e("imageAnalysis", "checkpoint 5")
+                            }
+                        } else {
+                            // Close the ImageProxy to avoid memory leaks
+                            imageProxy.close()
+                        }
+                        frameSkipCounter = (frameSkipCounter + 1) % 10000
+                        // Log every 25 frames
+                        if (frameSkipCounter % 25 == 0) {
+                            Log.e("Counter", "FRAME: $frameSkipCounter")
+                            Log.e("Counter", "Is Model Running?: $isModelRunning")
+                        }
+                    })
+                }
+
+            try {
+                // Unbind use cases before rebinding
+                cameraProvider.unbindAll()
+                isModelRunning = false
+                // Bind use cases to camera
+                cameraProvider.bindToLifecycle(
+                    this, cameraSelector, preview, imageAnalysis)
+                //this, cameraSelector, preview)
+                Log.e("imageAnalysis", "checkpoint 6")
+            } catch(exc: Exception) {
+                Log.e("Camera", "Use case binding failed", exc)
+            }
+
+        }, ContextCompat.getMainExecutor(requireContext()))
+    } // end startCamera
+
+    private fun stopCamera() {
+        val cameraProvider = ProcessCameraProvider.getInstance(requireContext()).get()
+        cameraProvider.unbindAll()
+    }
+
+    @OptIn(ExperimentalGetImage::class) private fun startCameraOld() {
         Log.d("startCamera", "Starting camera")
         val cameraProviderFuture = ProcessCameraProvider.getInstance(requireContext())
 
@@ -483,13 +667,22 @@ class HomeFragment : Fragment() {
         }, ContextCompat.getMainExecutor(requireContext()))
     } // end startCamera
 
-    fun runMobileFaceNetOnCameraImage(face: ByteBuffer){
+    private fun runMobileFaceNetOnCameraImage(face: ByteBuffer): FloatArray {
         val outputSize = 128 // Adjust this according to your model's output
 
         // Run model inference on new image
         val newImageOutput = Array(1) { FloatArray(outputSize) }
         tfliteMobileFaceNet.run(face, newImageOutput)
         val newImageFeatures = newImageOutput[0]
+
+        if (captureReferenceImage) {
+            captureReferenceImage=false
+            storedFeatureVector = newImageFeatures
+            Log.e("CURRENT", "reference features stored")
+            stopCamera = true
+            stopCamera()
+            return newImageFeatures
+        }
 
         var comparisonVector = FloatArray(outputSize)
 
@@ -509,10 +702,11 @@ class HomeFragment : Fragment() {
         } else {
             Toast.makeText(context, "No match found.", Toast.LENGTH_SHORT).show()
         }
+        return newImageFeatures
     }
 
 
-    fun cropBitmap(image: Image, boundingBox: Rect, rotationDegrees: Int): Bitmap {
+    private fun cropBitmap(image: Image, boundingBox: Rect, rotationDegrees: Int): Bitmap {
         Log.d("CROP", "cropBitmap begun")
         val yBuffer = image.planes[0].buffer // Y
         val vuBuffer = image.planes[2].buffer // VU
@@ -554,6 +748,95 @@ class HomeFragment : Fragment() {
             adjustedBox.width(),
             adjustedBox.height()
         )
+    }
+
+
+
+    private suspend fun cropAndPreprocessImages(bitmaps: List<Bitmap>): List<ByteBuffer> {
+        val inputSize = 112 // Required size for MobileNet
+        return bitmaps.map { bitmap ->
+            withContext(Dispatchers.Default) {
+                cropAndPreprocessImage(bitmap, inputSize)
+            }
+        }
+    }
+
+    private suspend fun cropAndPreprocessImage(bitmap: Bitmap, inputSize: Int): ByteBuffer {
+        var preprocessedImage = ByteBuffer.allocateDirect(4 * inputSize * inputSize * 3)
+        suspendCancellableCoroutine<Unit> { continuation ->
+            cropForMobileFacenet(bitmap) { croppedFaceBitmap ->
+                croppedFaceBitmap?.let {
+                    Log.d("Cropping", "Cropping Complete")
+                    preprocessedImage = preprocessImageMobileFacenet(croppedFaceBitmap, inputSize)
+                } ?: run {
+                    Log.d("Cropping", "Cropping Failed")
+                    preprocessedImage = preprocessImageMobileFacenet(bitmap, inputSize)
+                }
+                continuation.resume(Unit)
+            }
+        }
+        return preprocessedImage
+    }
+
+
+    // Function to use ML Kit to detect and crop the face
+    private fun cropForMobileFacenet(bitmap: Bitmap, completion: (Bitmap?) -> Unit) {
+        val options = FaceDetectorOptions.Builder()
+            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
+            .build()
+
+        val detector = FaceDetection.getClient(options)
+        val image = InputImage.fromBitmap(bitmap, 0)
+
+        detector.process(image)
+            .addOnSuccessListener { faces ->
+                if (faces.isNotEmpty()) {
+                    // For simplicity, we're using the first detected face.
+                    val face = faces.first()
+                    val bounds = face.boundingBox
+
+                    // Crop the face from the bitmap
+                    val faceBitmap = Bitmap.createBitmap(
+                        bitmap,
+                        bounds.left.coerceAtLeast(0),
+                        bounds.top.coerceAtLeast(0),
+                        bounds.width().coerceAtMost(bitmap.width - bounds.left),
+                        bounds.height().coerceAtMost(bitmap.height - bounds.top)
+                    )
+                    completion(faceBitmap)
+                } else {
+                    // No faces detected, return null or the original bitmap
+                    completion(null)
+                }
+            }
+            .addOnFailureListener { e ->
+                // Handle the error, return null or the original bitmap
+                completion(null)
+            }
+    }
+
+    private fun preprocessImageMobileFacenet(bitmap: Bitmap, inputSize: Int): ByteBuffer {
+        // Resize the image to match the input size (112x112)
+        val resizedBitmap = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
+
+        // Create a ByteBuffer to hold the image data
+        val byteBuffer = ByteBuffer.allocateDirect(4 * inputSize * inputSize * 3)
+        byteBuffer.order(ByteOrder.nativeOrder())
+
+        // Normalize pixel values
+        val intValues = IntArray(inputSize * inputSize)
+        resizedBitmap.getPixels(intValues, 0, resizedBitmap.width, 0, 0, resizedBitmap.width, resizedBitmap.height)
+        var pixel = 0
+        for (i in 0 until inputSize) {
+            for (j in 0 until inputSize) {
+                val pixelValue = intValues[pixel++]
+                byteBuffer.putFloat(((pixelValue shr 16 and 0xFF) - 128) * 0.0078125f) // Red
+                byteBuffer.putFloat(((pixelValue shr 8 and 0xFF) - 128) * 0.0078125f)  // Green
+                byteBuffer.putFloat(((pixelValue and 0xFF) - 128) * 0.0078125f)       // Blue
+            }
+        }
+
+        return byteBuffer
     }
 
 
@@ -621,32 +904,6 @@ class HomeFragment : Fragment() {
     }
 
 
-    private suspend fun cropAndPreprocessImages(bitmaps: List<Bitmap>): List<ByteBuffer> {
-        val inputSize = 112 // Required size for MobileNet
-        return bitmaps.map { bitmap ->
-            withContext(Dispatchers.Default) {
-                cropAndPreprocessImage(bitmap, inputSize)
-            }
-        }
-    }
-
-    private suspend fun cropAndPreprocessImage(bitmap: Bitmap, inputSize: Int): ByteBuffer {
-        var preprocessedImage = ByteBuffer.allocateDirect(4 * inputSize * inputSize * 3)
-        suspendCancellableCoroutine<Unit> { continuation ->
-            cropForMobileFacenet(bitmap) { croppedFaceBitmap ->
-                croppedFaceBitmap?.let {
-                    Log.d("Cropping", "Cropping Complete")
-                    preprocessedImage = preprocessImageMobileFacenet(croppedFaceBitmap, inputSize)
-                } ?: run {
-                    Log.d("Cropping", "Cropping Failed")
-                    preprocessedImage = preprocessImageMobileFacenet(bitmap, inputSize)
-                }
-                continuation.resume(Unit)
-            }
-        }
-        return preprocessedImage
-    }
-
     /* This function runs inference using two versions of the mobilefacenet model:
     One that's pretrained and sourced from https://www.kaggle.com/code/jasonhcwong/mobilefacenet and
     one that I trained in CoLab using the instructions and dataset in the accompanying Notebook.
@@ -698,69 +955,6 @@ class HomeFragment : Fragment() {
             Log.d("Comparison (Pretrained)", "Different people: Image 1 and ${'A' + i - 5}, Cosine Similarity: $cosineSimilarity, Euclidean Distance: $distance")
         }
     }// end runInference
-
-
-
-    // Function to use ML Kit to detect and crop the face
-    private fun cropForMobileFacenet(bitmap: Bitmap, completion: (Bitmap?) -> Unit) {
-        val options = FaceDetectorOptions.Builder()
-            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
-            .build()
-
-        val detector = FaceDetection.getClient(options)
-        val image = InputImage.fromBitmap(bitmap, 0)
-
-        detector.process(image)
-            .addOnSuccessListener { faces ->
-                if (faces.isNotEmpty()) {
-                    // For simplicity, we're using the first detected face.
-                    val face = faces.first()
-                    val bounds = face.boundingBox
-
-                    // Crop the face from the bitmap
-                    val faceBitmap = Bitmap.createBitmap(
-                        bitmap,
-                        bounds.left.coerceAtLeast(0),
-                        bounds.top.coerceAtLeast(0),
-                        bounds.width().coerceAtMost(bitmap.width - bounds.left),
-                        bounds.height().coerceAtMost(bitmap.height - bounds.top)
-                    )
-                    completion(faceBitmap)
-                } else {
-                    // No faces detected, return null or the original bitmap
-                    completion(null)
-                }
-            }
-            .addOnFailureListener { e ->
-                // Handle the error, return null or the original bitmap
-                completion(null)
-            }
-    }
-
-    private fun preprocessImageMobileFacenet(bitmap: Bitmap, inputSize: Int): ByteBuffer {
-        // Resize the image to match the input size (112x112)
-        val resizedBitmap = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
-
-        // Create a ByteBuffer to hold the image data
-        val byteBuffer = ByteBuffer.allocateDirect(4 * inputSize * inputSize * 3)
-        byteBuffer.order(ByteOrder.nativeOrder())
-
-        // Normalize pixel values
-        val intValues = IntArray(inputSize * inputSize)
-        resizedBitmap.getPixels(intValues, 0, resizedBitmap.width, 0, 0, resizedBitmap.width, resizedBitmap.height)
-        var pixel = 0
-        for (i in 0 until inputSize) {
-            for (j in 0 until inputSize) {
-                val pixelValue = intValues[pixel++]
-                byteBuffer.putFloat(((pixelValue shr 16 and 0xFF) - 128) * 0.0078125f) // Red
-                byteBuffer.putFloat(((pixelValue shr 8 and 0xFF) - 128) * 0.0078125f)  // Green
-                byteBuffer.putFloat(((pixelValue and 0xFF) - 128) * 0.0078125f)       // Blue
-            }
-        }
-
-        return byteBuffer
-    }
-
 
     // Function to calculate the Euclidean distance between two feature vectors
     private fun euclideanDistance(vec1: FloatArray, vec2: FloatArray): Float {
