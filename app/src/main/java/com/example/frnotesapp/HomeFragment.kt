@@ -1,59 +1,63 @@
 package com.example.frnotesapp
 
-// Importing necessary Android and TensorFlow classes
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageFormat
+import android.graphics.Rect
+import android.graphics.YuvImage
+import android.Manifest
+import android.graphics.Matrix
+import android.media.Image
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.fragment.app.Fragment
-import androidx.lifecycle.ViewModelProvider
-import org.tensorflow.lite.Interpreter
-import java.io.FileInputStream
-import java.nio.MappedByteBuffer
-import java.nio.channels.FileChannel
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.util.Log
 import android.widget.Button
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import kotlin.math.pow
-import kotlin.math.sqrt
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.face.FaceDetection
-import com.google.mlkit.vision.face.FaceDetectorOptions
-import kotlinx.coroutines.*
-import kotlin.coroutines.resume
 import android.widget.Toast
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
-import android.Manifest
+import androidx.fragment.app.Fragment
+import androidx.lifecycle.ViewModelProvider
 import androidx.camera.core.ImageAnalysis
-import android.graphics.ImageFormat
-import android.graphics.Rect
-import android.graphics.YuvImage
-import android.media.Image
 import androidx.annotation.OptIn
 import androidx.camera.core.ExperimentalGetImage
+import androidx.camera.core.ImageProxy
+import java.io.FileInputStream
+import java.nio.MappedByteBuffer
+import java.nio.channels.FileChannel
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.*
+import kotlin.coroutines.resume
+import kotlin.math.pow
+import kotlin.math.sqrt
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.face.FaceDetection
+import com.google.mlkit.vision.face.FaceDetectorOptions
+import org.tensorflow.lite.Interpreter
 
 // Fragment class for the first page/tab
 class HomeFragment : Fragment() {
     // declare ViewModel - for managing UI-related data in a lifecycle-conscious way
     private lateinit var viewModel: NotesViewModel
 
+    // PreviewView for displaying camera feed
+    private lateinit var viewFinder: PreviewView
+
     // TensorFlow Lite interpreter for running the TensorFlow Lite models
     private lateinit var tfliteMobilenet: Interpreter
     private lateinit var tfliteMobileFaceNet: Interpreter
+    private lateinit var tflitePretrainedMobileFaceNet: Interpreter
     private lateinit var tfliteFaceNet: Interpreter
 
-    private lateinit var viewFinder: PreviewView
-
+    // Vector to store features stored for verification reference
     private var storedFeatureVector: FloatArray? = null
 
 
@@ -79,10 +83,16 @@ class HomeFragment : Fragment() {
         tfliteFaceNet = Interpreter(model)
     }
 
-    // Function to load the FaceNet model
+    // Function to load the MobileFaceNet model trained in CoLab
     private fun loadMobileFacenetModel(activity: Activity) {
-        val model = loadModelFile(activity, "pretrained_mfnet.tflite")
+        val model = loadModelFile(activity, "output_model.tflite")
         tfliteMobileFaceNet = Interpreter(model)
+    }
+
+    // Function to load the pretrained MobileFaceNet model
+    private fun loadPretrainedMobileFacenetModel(activity: Activity) {
+        val model = loadModelFile(activity, "pretrained_mfnet.tflite")
+        tflitePretrainedMobileFaceNet = Interpreter(model)
     }
 
     // Function to preprocess the image before feeding it to the Mobilenet FV model
@@ -110,6 +120,7 @@ class HomeFragment : Fragment() {
         return byteBuffer
     }
 
+    //The following methods are for requesting permissions required for android so I can use the camera and probably storage later
     private val cameraPermissionRequestCode = 1001
 
     private fun requestCameraPermission() {
@@ -126,7 +137,6 @@ class HomeFragment : Fragment() {
         }
     }
 
-
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         Log.d("onRequestPermissionsResult", "Permission result received")
         when (requestCode) {
@@ -141,7 +151,7 @@ class HomeFragment : Fragment() {
                 }
                 return
             }
-            // Other permission requests...
+            // Other permission requests and results - probs need storage later
         }
     }
 
@@ -166,6 +176,7 @@ class HomeFragment : Fragment() {
         loadMobilenetFVModel(requireActivity())
         //loadFacenetModel(requireActivity()) // I couldn't get this to work
         loadMobileFacenetModel(requireActivity())
+        loadPretrainedMobileFacenetModel(requireActivity())
 
         processStoredImage()
 
@@ -249,62 +260,6 @@ class HomeFragment : Fragment() {
             Log.d("HomeFragment", "Feature Vector B: ${featureVectorB.joinToString(", ")}")
             Log.d("HomeFragment", "Feature Vector C: ${featureVectorC.joinToString(", ")}")
             Log.d("HomeFragment", "Feature Vector D: ${featureVectorD.joinToString(", ")}")
-
-            /*// Basic Statistical Analysis
-            val mean1 = featureVector1.average()
-            val max1 = featureVector1.maxOrNull()
-            val min1 = featureVector1.minOrNull()
-            val std1 = calculateStandardDeviation(featureVector1)
-
-            val mean2 = featureVector2.average()
-            val max2 = featureVector2.maxOrNull()
-            val min2 = featureVector2.minOrNull()
-            val std2 = calculateStandardDeviation(featureVector2)
-
-            val mean3 = featureVector3.average()
-            val max3 = featureVector3.maxOrNull()
-            val min3 = featureVector3.minOrNull()
-            val std3 = calculateStandardDeviation(featureVector3)
-
-            val mean4 = featureVector4.average()
-            val max4 = featureVector4.maxOrNull()
-            val min4 = featureVector4.minOrNull()
-            val std4 = calculateStandardDeviation(featureVector4)
-
-            val mean5 = featureVector5.average()
-            val max5 = featureVector5.maxOrNull()
-            val min5 = featureVector5.minOrNull()
-            val std5 = calculateStandardDeviation(featureVector5)
-
-            val meanA = featureVectorA.average()
-            val maxA = featureVectorA.maxOrNull()
-            val minA = featureVectorA.minOrNull()
-            val stdA = calculateStandardDeviation(featureVectorA)
-
-            val meanB = featureVectorB.average()
-            val maxB = featureVectorB.maxOrNull()
-            val minB = featureVectorB.minOrNull()
-            val stdB = calculateStandardDeviation(featureVectorB)
-
-            val meanC = featureVectorC.average()
-            val maxC = featureVectorC.maxOrNull()
-            val minC = featureVectorC.minOrNull()
-            val stdC = calculateStandardDeviation(featureVectorC)
-
-            val meanD = featureVectorD.average()
-            val maxD = featureVectorD.maxOrNull()
-            val minD = featureVectorD.minOrNull()
-            val stdD = calculateStandardDeviation(featureVectorD)
-*/
-            /*Log.d("HomeFragment", "Mean 1: $mean1, Max: $max1, Min: $min1, Std: $std1")
-            Log.d("HomeFragment", "Mean 2: $mean2, Max: $max2, Min: $min2, Std: $std2")
-            Log.d("HomeFragment", "Mean 3: $mean3, Max: $max3, Min: $min3, Std: $std3")
-            Log.d("HomeFragment", "Mean 4: $mean4, Max: $max4, Min: $min4, Std: $std4")
-            Log.d("HomeFragment", "Mean 5: $mean5, Max: $max5, Min: $min5, Std: $std5")
-            Log.d("HomeFragment", "Mean A: $meanA, Max: $maxA, Min: $minA, Std: $stdA")
-            Log.d("HomeFragment", "Mean B: $meanB, Max: $maxB, Min: $minB, Std: $stdB")
-            Log.d("HomeFragment", "Mean C: $meanC, Max: $maxC, Min: $minC, Std: $stdC")
-            Log.d("HomeFragment", "Mean D: $meanD, Max: $maxD, Min: $minD, Std: $stdD")*/
 
             // Calculating and logging cosine similarity and Euclidean distance between feature vectors
             // Using the function to compare the two feature vectors
@@ -404,7 +359,20 @@ class HomeFragment : Fragment() {
                 storedFeatureVector = referenceImageOutput[0]
                 Log.d("processStoredImage", "Feature vector stored")
             }
-    }}
+        }}
+
+    fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
+        val planeProxy = imageProxy.planes[0]
+        val buffer = planeProxy.buffer
+        val bytes = ByteArray(buffer.remaining())
+        buffer.get(bytes)
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    }
+
+    @Volatile
+    private var isModelRunning = false
+
+    private lateinit var croppedFaceForVerification : Bitmap
 
     @OptIn(ExperimentalGetImage::class) private fun startCamera() {
         Log.d("startCamera", "Starting camera")
@@ -423,46 +391,78 @@ class HomeFragment : Fragment() {
 
             // Select back camera as a default
             val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
-
+            var frameSkipCounter = 0
+            val frameSkipRate = 300 // Skip every X frames
+            var rotationDegrees = 0
             val imageAnalysis = ImageAnalysis.Builder()
                 .build()
                 .also {
                     it.setAnalyzer(ContextCompat.getMainExecutor(requireContext()), ImageAnalysis.Analyzer { imageProxy ->
-                        Log.e("imageAnalysis", "checkpoint 1")
-                        val rotationDegrees = imageProxy.imageInfo.rotationDegrees
-                        val mediaImage = imageProxy.image
-                        Log.d("startCamera", "Image format: ${mediaImage?.format}")
-                        if (mediaImage != null) {
-                            Log.e("imageAnalysis", "checkpoint 2")
-                            val inputImage = InputImage.fromMediaImage(mediaImage, rotationDegrees)
-                            val detector = FaceDetection.getClient()
-                            detector.process(inputImage)
-                                .addOnSuccessListener { faces ->
-                                    CoroutineScope(Dispatchers.IO).launch {
-                                        for (face in faces) {
+                        if (frameSkipCounter % frameSkipRate == 0 && !isModelRunning) {
+                            //isModelRunning = true
+                            Log.e("imageAnalysis", "analysing image")
+                            rotationDegrees = imageProxy.imageInfo.rotationDegrees
+                            val mediaImage = imageProxy.image
+                            Log.d("startCamera", "Image format: ${mediaImage?.format}")
+                            if (mediaImage != null) {
+                                Log.e("imageAnalysis", "checkpoint 2")
+                                val inputImage = InputImage.fromMediaImage(mediaImage, rotationDegrees)
+                                val detector = FaceDetection.getClient()
+                                detector.process(inputImage)
+                                    .addOnSuccessListener { faces ->
+                                        /* I tried to do this when a face was detected but it crashed as I was trying to use the imageProxy after it closed
+                                        CoroutineScope(Dispatchers.IO).launch {
+                                            for (face in faces) {
+                                                // Assuming only one face is detected and processed
+                                                val boundingBox = face.boundingBox
+                                                val croppedFaceBitmap = cropBitmap(mediaImage, boundingBox)
+                                                Log.e("imageAnalysis", "checkpoint 3")
+                                                // Preprocess and run the model on the cropped face
+                                                val preprocessedImage = cropAndPreprocessImage(croppedFaceBitmap, 112)
+                                                runMobileFaceNetOnCameraImage(preprocessedImage)
+                                            }
+                                        } */
+                                        if (faces.isNotEmpty()) {
                                             // Assuming only one face is detected and processed
-                                            val boundingBox = face.boundingBox
-                                            val croppedFaceBitmap = cropBitmap(mediaImage, boundingBox)
-                                            Log.e("imageAnalysis", "checkpoint 3")
+                                            val boundingBox = faces[0].boundingBox
+                                            Log.d("VERIFICATION CROPPING STARTED", "cropping...")
+                                            croppedFaceForVerification = cropBitmap(mediaImage, boundingBox, rotationDegrees)
+                                            Log.d("VERIFICATION CROPPING COMPLETE", "cropping finished")
+                                            val preprocessedImage = preprocessImageMobileFacenet(croppedFaceForVerification, 112)
                                             // Preprocess and run the model on the cropped face
-                                            val preprocessedImage = cropAndPreprocessImage(croppedFaceBitmap, 112)
+                                            //val preprocessedImage = cropAndPreprocessImage(croppedFaceForVerification, 112)
                                             runMobileFaceNetOnCameraImage(preprocessedImage)
+                                            // Once done, set the flag back to false
+                                            Log.d("FACEDETECTED", "isModelRunning = false")
+                                        } else {
+                                            isModelRunning = false
+                                            Log.d("DETECTION", "No face detected")
                                         }
+                                        Log.d("DETECTION", "onSuccessListener entered: detection attempt complete")
                                     }
-                                }
-                                .addOnFailureListener { e ->
-                                    // Handle any errors during ML Kit face detection
-                                    Log.e("startCamera", "Face detection failed: ${e.message}")
-                                }
-                                .addOnCompleteListener {
-                                    // After done with the frame, you must close the imageProxy
-                                    imageProxy.close()
-                                    Log.e("imageAnalysis", "checkpoint 4")
-                                }
+                                    .addOnFailureListener { e ->
+                                        // Handle any errors during ML Kit face detection
+                                        Log.e("DETECTION", "onFailureListener entered: ${e.message}")
+                                    }
+                                    .addOnCompleteListener {
+                                        // After done with the frame, you must close the imageProxy
+                                        imageProxy.close()
+                                        Log.e("DETECTION", "onCompleteListener entered")
+                                    }
+                            } else {
+                                // Close the imageProxy if mediaImage is null
+                                imageProxy.close()
+                                Log.e("imageAnalysis", "checkpoint 5")
+                            }
                         } else {
-                            // Close the imageProxy if mediaImage is null
+                            // Close the ImageProxy to avoid memory leaks
                             imageProxy.close()
-                            Log.e("imageAnalysis", "checkpoint 5")
+                        }
+                        frameSkipCounter = (frameSkipCounter + 1) % 10000
+                        // Log every 25 frames
+                        if (frameSkipCounter % 25 == 0) {
+                            Log.e("Counter", "FRAME: $frameSkipCounter")
+                            Log.e("Counter", "Is Model Running?: $isModelRunning")
                         }
                     })
                 }
@@ -470,18 +470,18 @@ class HomeFragment : Fragment() {
             try {
                 // Unbind use cases before rebinding
                 cameraProvider.unbindAll()
-
+                isModelRunning = false
                 // Bind use cases to camera
                 cameraProvider.bindToLifecycle(
                     this, cameraSelector, preview, imageAnalysis)
-                    //this, cameraSelector, preview)
+                //this, cameraSelector, preview)
                 Log.e("imageAnalysis", "checkpoint 6")
             } catch(exc: Exception) {
                 Log.e("Camera", "Use case binding failed", exc)
             }
 
         }, ContextCompat.getMainExecutor(requireContext()))
-    }
+    } // end startCamera
 
     fun runMobileFaceNetOnCameraImage(face: ByteBuffer){
         val outputSize = 128 // Adjust this according to your model's output
@@ -512,7 +512,8 @@ class HomeFragment : Fragment() {
     }
 
 
-    fun cropBitmap(image: Image, boundingBox: Rect): Bitmap {
+    fun cropBitmap(image: Image, boundingBox: Rect, rotationDegrees: Int): Bitmap {
+        Log.d("CROP", "cropBitmap begun")
         val yBuffer = image.planes[0].buffer // Y
         val vuBuffer = image.planes[2].buffer // VU
 
@@ -531,13 +532,28 @@ class HomeFragment : Fragment() {
         val imageBytes = out.toByteArray()
         var bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
 
-        // Rotate bitmap if necessary (based on image's rotationDegrees)
-        // For this, you need to pass rotationDegrees to this function and create a rotation matrix
+        // Rotate the bitmap to match the orientation used during face detection
+        val matrix = Matrix().apply {
+            postRotate(rotationDegrees.toFloat())
+        }
+        val rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
 
-        // Crop the bitmap to the boundingBox
-        bitmap = Bitmap.createBitmap(bitmap, boundingBox.left, boundingBox.top, boundingBox.width(), boundingBox.height())
+        // Adjust the bounding box to ensure it's within the bitmap's bounds
+        val adjustedBox = Rect(
+            boundingBox.left.coerceAtLeast(0),
+            boundingBox.top.coerceAtLeast(0),
+            boundingBox.right.coerceAtMost(rotatedBitmap.width),
+            boundingBox.bottom.coerceAtMost(rotatedBitmap.height)
+        )
 
-        return bitmap
+        // Crop the bitmap to the adjusted bounding box
+        return Bitmap.createBitmap(
+            rotatedBitmap,
+            adjustedBox.left,
+            adjustedBox.top,
+            adjustedBox.width(),
+            adjustedBox.height()
+        )
     }
 
 
@@ -631,53 +647,57 @@ class HomeFragment : Fragment() {
         return preprocessedImage
     }
 
-    /*private fun runInference(preprocessedImages: List<ByteBuffer>) {
-        val outputSize = 128 // Set this based on your model's output
-
-        val outputs = preprocessedImages.map { imageBuffer ->
-            val output = Array(1) { FloatArray(outputSize) }
-            tfliteMobileFaceNet.run(imageBuffer, output)
-            output[0]
-        }
-
-        // Process the outputs
-        for (output in outputs) {
-            // Log or process the feature vectors
-            Log.d("HomeFragment", "Feature Vector: ${output.joinToString(", ")}")
-        }
-
-        // Example of calculating cosine similarity between two feature vectors
-        val cosineSimilarity = calculateCosineSimilarity(outputs[0], outputs[1])
-        Log.d("Cosine Similarity", "Similarity between two feature vectors: $cosineSimilarity")
-
-        // Example of calculating Euclidean distance
-        val distance = euclideanDistance(outputs[0], outputs[1])
-        Log.d("Euclidean Distance", "Distance between two feature vectors: $distance")
-    }*/
-
+    /* This function runs inference using two versions of the mobilefacenet model:
+    One that's pretrained and sourced from https://www.kaggle.com/code/jasonhcwong/mobilefacenet and
+    one that I trained in CoLab using the instructions and dataset in the accompanying Notebook.
+    Currently the pretrained version produces slightly better results based on Euclidean Distance
+    and Cosine Similarity, but I'm not sure why as I expected them to perform the same */
     private fun runInference(preprocessedImages: List<ByteBuffer>) {
-        val outputSize = 128 // Set this based on your model's output
+        val outputSize = 128 // Size of output of the MobileFacenet models used
 
+        // running inference on the preprocessed images using the trained model
         val outputs = preprocessedImages.map { imageBuffer ->
             val output = Array(1) { FloatArray(outputSize) }
             tfliteMobileFaceNet.run(imageBuffer, output)
             output[0]
         }
 
-        // Comparing feature vectors of the same person (images 1-5)
+        // running inference on the preprocessed images using the pretrained model
+        val pretrainedOutputs = preprocessedImages.map { imageBuffer ->
+            val output = Array(1) { FloatArray(outputSize) }
+            tflitePretrainedMobileFaceNet.run(imageBuffer, output)
+            output[0]
+        }
+
+        // The following hardcoded outputs are to show verification performance against known data for testing
+        // (Trained) Comparing feature vectors of the same person (images 1-5)
         for (i in 0 until 4) { // Compare each image with the next one
             val cosineSimilarity = calculateCosineSimilarity(outputs[i], outputs[i + 1])
             val distance = euclideanDistance(outputs[i], outputs[i + 1])
-            Log.d("Comparison", "Same person: Images ${i + 1} and ${i + 2}, Cosine Similarity: $cosineSimilarity, Euclidean Distance: $distance")
+            Log.d("Comparison (Trained)", "Same person: Images ${i + 1} and ${i + 2}, Cosine Similarity: $cosineSimilarity, Euclidean Distance: $distance")
         }
 
-        // Comparing feature vectors of different people (images 1 with A-D)
+        // (Pretrained) Comparing feature vectors of the same person (images 1-5)
+        for (i in 0 until 4) { // Compare each image with the next one
+            val cosineSimilarity = calculateCosineSimilarity(pretrainedOutputs[i], pretrainedOutputs[i + 1])
+            val distance = euclideanDistance(pretrainedOutputs[i], pretrainedOutputs[i + 1])
+            Log.d("Comparison (Pretrained)", "Same person: Images ${i + 1} and ${i + 2}, Cosine Similarity: $cosineSimilarity, Euclidean Distance: $distance")
+        }
+
+        // (Trained) Comparing feature vectors of different people (images 1 with A-D)
         for (i in 5 until outputs.size) {
             val cosineSimilarity = calculateCosineSimilarity(outputs[0], outputs[i])
             val distance = euclideanDistance(outputs[0], outputs[i])
-            Log.d("Comparison", "Different people: Image 1 and ${'A' + i - 5}, Cosine Similarity: $cosineSimilarity, Euclidean Distance: $distance")
+            Log.d("Comparison (Trained)", "Different people: Image 1 and ${'A' + i - 5}, Cosine Similarity: $cosineSimilarity, Euclidean Distance: $distance")
         }
-    }
+
+        // (Pretrained) Comparing feature vectors of different people (images 1 with A-D)
+        for (i in 5 until pretrainedOutputs.size) {
+            val cosineSimilarity = calculateCosineSimilarity(pretrainedOutputs[0], pretrainedOutputs[i])
+            val distance = euclideanDistance(pretrainedOutputs[0], pretrainedOutputs[i])
+            Log.d("Comparison (Pretrained)", "Different people: Image 1 and ${'A' + i - 5}, Cosine Similarity: $cosineSimilarity, Euclidean Distance: $distance")
+        }
+    }// end runInference
 
 
 
