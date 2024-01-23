@@ -1,14 +1,14 @@
 package com.example.frnotesapp
 
+import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
+import android.graphics.Matrix
 import android.graphics.Rect
 import android.graphics.YuvImage
-import android.Manifest
-import android.graphics.Matrix
 import android.media.Image
 import android.os.Bundle
 import android.util.Log
@@ -17,33 +17,29 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.Toast
+import androidx.annotation.OptIn
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
-import androidx.camera.core.ImageAnalysis
-import androidx.annotation.OptIn
-import androidx.camera.core.ExperimentalGetImage
-import java.io.FileInputStream
-import java.nio.MappedByteBuffer
-import java.nio.channels.FileChannel
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.io.ByteArrayOutputStream
-import kotlinx.coroutines.*
-import kotlin.coroutines.resume
-import kotlin.math.pow
-import kotlin.math.sqrt
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.FaceDetection
-import com.google.mlkit.vision.face.FaceDetectorOptions
 import org.tensorflow.lite.Interpreter
+import java.io.ByteArrayOutputStream
+import java.io.FileInputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.MappedByteBuffer
+import java.nio.channels.FileChannel
+import kotlin.math.pow
+import kotlin.math.sqrt
 
-// Fragment class for the first page/tab
-class HomeFragment : Fragment() {
+class LockScreenFragment : Fragment() {
     // declare ViewModel - for managing UI-related data in a lifecycle-conscious way
     private lateinit var viewModel: NotesViewModel
     // PreviewView for displaying camera feed
