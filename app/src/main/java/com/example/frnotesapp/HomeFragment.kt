@@ -212,10 +212,10 @@ class HomeFragment : Fragment() {
                                             val boundingBox = faces[0].boundingBox
                                             overlayView.transformAndSetFaceBoundingBox(
                                                 boundingBox,
-                                                cameraWidth = 640,
-                                                cameraHeight = 480,
-                                                viewWidth = 1087,
-                                                viewHeight = 1583
+                                                imageProxy.width,
+                                                imageProxy.height,
+                                                viewFinder.width,
+                                                viewFinder.height
                                             )
                                             croppedFaceForVerification = cropBitmap(mediaImage, boundingBox, rotationDegrees)
                                             val preprocessedImage = preprocessImageMobileFacenet(croppedFaceForVerification, 112)
@@ -306,9 +306,11 @@ class HomeFragment : Fragment() {
         // Show a toast message if a match is found
         if (isMatch) {
             Toast.makeText(context, "Match found!", Toast.LENGTH_SHORT).show()
+            stopCamera = true
+            stopCamera()
             (activity as? MainActivity)?.isAuthenticated = true
         } else {
-            Toast.makeText(context, "No match found.", Toast.LENGTH_SHORT).show()
+            //Toast.makeText(context, "No match found.", Toast.LENGTH_SHORT).show()
         }
         return newImageFeatures
     }
