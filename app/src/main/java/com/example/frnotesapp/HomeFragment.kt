@@ -48,6 +48,7 @@ class HomeFragment : Fragment() {
     private lateinit var viewModel: NotesViewModel
     // PreviewView for displaying camera feed
     private lateinit var viewFinder: PreviewView
+    private lateinit var overlayView : OverlayView
     // TensorFlow Lite interpreter for running the TensorFlow Lite models
     private lateinit var tfliteMobilenet: Interpreter
     private lateinit var tfliteMobileFaceNet: Interpreter
@@ -84,6 +85,7 @@ class HomeFragment : Fragment() {
         loadMobileFacenetModel(requireActivity())
 
         viewFinder = view.findViewById(R.id.viewFinder)
+        overlayView = view.findViewById(R.id.overlay)
 
         val cameraVerificationButton = view.findViewById<Button>(R.id.cameraVerificationButton)
         cameraVerificationButton.setOnClickListener {
@@ -96,6 +98,15 @@ class HomeFragment : Fragment() {
             stopCamera = false
             captureReferenceImage = true
             requestCameraPermission()
+        }
+
+        viewFinder.post {
+            val previewWidth = viewFinder.width
+            val previewHeight = viewFinder.height
+            // Use these dimensions for calculations
+            Log.d("DIMENSIONS", "$previewWidth")
+            Log.d("DIMENSIONS", "$previewHeight")
+
         }
     }// end onViewCreated
 
@@ -167,12 +178,19 @@ class HomeFragment : Fragment() {
             // Select back camera as a default
             val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
             var frameSkipCounter = 0
-            val frameSkipRate = 50 // Skip every X frames
+            val frameSkipRate = 5 // Skip every X frames
             var rotationDegrees = 0
             val imageAnalysis = ImageAnalysis.Builder()
                 .build()
                 .also {
                     it.setAnalyzer(ContextCompat.getMainExecutor(requireContext()), ImageAnalysis.Analyzer { imageProxy ->
+                        val cameraFeedWidth = imageProxy.width
+                        val cameraFeedHeight = imageProxy.height
+
+
+                        Log.d("DIMENSIONS", "$cameraFeedWidth")
+                        Log.d("DIMENSIONS", "$cameraFeedHeight")
+
                         if (stopCamera) {
                             Log.e("STOPCAMERA", "stop camera is: $stopCamera")
                             imageProxy.close()
@@ -192,6 +210,13 @@ class HomeFragment : Fragment() {
                                     .addOnSuccessListener { faces ->
                                         if (faces.isNotEmpty()) {
                                             val boundingBox = faces[0].boundingBox
+                                            overlayView.transformAndSetFaceBoundingBox(
+                                                boundingBox,
+                                                cameraWidth = 640,
+                                                cameraHeight = 480,
+                                                viewWidth = 1087,
+                                                viewHeight = 1583
+                                            )
                                             croppedFaceForVerification = cropBitmap(mediaImage, boundingBox, rotationDegrees)
                                             val preprocessedImage = preprocessImageMobileFacenet(croppedFaceForVerification, 112)
                                             runMobileFaceNetOnCameraImage(preprocessedImage)
