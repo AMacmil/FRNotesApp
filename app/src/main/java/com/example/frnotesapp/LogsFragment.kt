@@ -57,7 +57,6 @@ class LogsFragment : Fragment() {
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-
         viewModel = activity?.run {
             ViewModelProvider(this)[NotesViewModel::class.java]
         } ?: throw Exception("Invalid Activity")

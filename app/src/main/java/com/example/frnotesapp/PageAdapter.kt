@@ -1,11 +1,11 @@
 package com.example.frnotesapp
 
+import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.FragmentActivity
 import androidx.viewpager2.adapter.FragmentStateAdapter
 
 // PageAdapter for managing fragments in ViewPager2
-class PageAdapter(fa: FragmentActivity, private val mNumOfTabs: Int) :
+class PageAdapter(fa: AppCompatActivity, private val mNumOfTabs: Int) :
     FragmentStateAdapter(fa) {
 
     override fun getItemCount(): Int {
@@ -18,7 +18,7 @@ class PageAdapter(fa: FragmentActivity, private val mNumOfTabs: Int) :
             0 -> HomeFragment()
             1 -> NotesFragment()
             2 -> LogsFragment()
-            else -> HomeFragment() // default to HomeFragment
+            else -> HomeFragment()
         }
-    }
 }
+    }

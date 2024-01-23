@@ -2,18 +2,30 @@ package com.example.frnotesapp
 
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.view.View
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.Toolbar
 import androidx.lifecycle.ViewModelProvider
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
+import kotlin.properties.Delegates
 
 class MainActivity : AppCompatActivity()  {
     private lateinit var viewModel: NotesViewModel
+    private lateinit var tabLayout: TabLayout
+    private var currentTabPosition = 0
+
+    // Make isAuthenticated an observable property
+    var isAuthenticated by Delegates.observable(false) { _, _, newValue ->
+        if(::tabLayout.isInitialized) {
+            updateTabLayoutVisibility(newValue)
+        }
+    }
 
     // onCreate method is called when the activity is first created.
     override fun onCreate(savedInstanceState: Bundle?) {
+
         // apply theme based on dark mode setting - onCreate is called if the phone is
         // switched to dark mode so it's appropriate here
         when (AppCompatDelegate.getDefaultNightMode()) {
@@ -41,7 +53,7 @@ class MainActivity : AppCompatActivity()  {
         setSupportActionBar(toolbar)
 
         // initialize TabLayout and add titled tabs
-        val tabLayout = findViewById<TabLayout>(R.id.tab_layout)
+        tabLayout = findViewById<TabLayout>(R.id.tab_layout)
         tabLayout.addTab(tabLayout.newTab().setText(R.string.tab_page1))
         tabLayout.addTab(tabLayout.newTab().setText(R.string.tab_page2))
         tabLayout.addTab(tabLayout.newTab().setText(R.string.tab_page3))
@@ -49,6 +61,7 @@ class MainActivity : AppCompatActivity()  {
         // initialize ViewPager2 and set its adapter - the PageAdaptor defines how the
         // Fragments are linked to the tabs
         val viewPager = findViewById<ViewPager2>(R.id.pager)
+        viewPager.isUserInputEnabled = false
         val adapter = PageAdapter(this, 3)
         viewPager.adapter = adapter
 
@@ -62,5 +75,12 @@ class MainActivity : AppCompatActivity()  {
                 2 -> tab.text = "Logs"
             }
         }.attach()
+
+        updateTabLayoutVisibility(isAuthenticated)
+    }// end onCreate
+
+    private fun updateTabLayoutVisibility(isAuthenticated: Boolean) {
+        tabLayout.visibility = if (isAuthenticated) View.VISIBLE else View.GONE
     }
-}
+
+}// end class MainActivity

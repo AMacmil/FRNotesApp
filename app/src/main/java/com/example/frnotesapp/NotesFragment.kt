@@ -47,40 +47,50 @@ class NotesFragment : Fragment() {
     private lateinit var selectedImageView: ImageView
     private lateinit var fileNameEditText: EditText
     private lateinit var imageTitleEditText: EditText
-    private lateinit var v: View
     private lateinit var viewModel: NotesViewModel
     private lateinit var recorder: MediaRecorder
     // variables for permission to record audio
     private var permissionToRecordAccepted = false
     private var permissions: Array<String> = arrayOf(Manifest.permission.RECORD_AUDIO)
+    private lateinit var mainActivity: MainActivity
+
+    override fun onAttach(context: Context) {
+        super.onAttach(context)
+        if (context is MainActivity) {
+            mainActivity = context
+        } else {
+            throw RuntimeException("$context must be MainActivity")
+        }
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        viewModel = activity?.run {
-            ViewModelProvider(this)[NotesViewModel::class.java]
-        } ?: throw Exception("Invalid Activity")
+        viewModel = ViewModelProvider(requireActivity())[NotesViewModel::class.java]
 
-        v = inflater.inflate(R.layout.notes_fragment, container, false)
-
-        // pickMedia uses Android PhotoPicker to select image from gallery - returns result uri
-        // and sets the image in the preview frame selectedImageView
-        pickMedia = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-            if (uri != null) {
-                val filePath = copyFileToInternalStorage(uri, requireContext().filesDir.path, requireContext())
-                selectedImagePath = filePath  // Store the selected image path
-                selectedImageView.setImageURI(uri)
-            }
+        // Check if the user is authenticated
+        val layoutResId = if (mainActivity.isAuthenticated) {
+            R.layout.notes_fragment // Your regular NotesFragment layout
+        } else {
+            R.layout.denied_fragment // Layout for HomeFragment when not authenticated
         }
 
-        initViewModel()
-        initComponents()
-        setupObservers()
-
-        return v
+        return inflater.inflate(layoutResId, container, false)
     }
 
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        if (mainActivity.isAuthenticated) {
+            initViewModel()
+            initComponents(view)
+            setupObservers(view)
+        } else {
+            // Setup for DeniedFragment layout, if needed
+        }
+    }
+/*
     // onViewCreated method to handle UI interactions, calls after the view is created
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -96,7 +106,7 @@ class NotesFragment : Fragment() {
             calendar.set(year, month, dayOfMonth)
             viewModel.selectedDate.value = formatDate(calendar)
         }
-    }
+    }*/
 
     //format for display
     private fun formatDate(calendar: Calendar): String {
@@ -173,15 +183,15 @@ class NotesFragment : Fragment() {
     }
 
     // function to initialise UI components
-    private fun initComponents() {
+    private fun initComponents(v: View) {
         val valueView = v.findViewById<TextView>(R.id.textView)
         val textNoteLayout: LinearLayout = v.findViewById(R.id.textNoteLayout)
         val audioRecorderLayout: LinearLayout = v.findViewById(R.id.audioRecorderLayout)
         val imageUploaderLayout: LinearLayout = v.findViewById(R.id.imageUploaderLayout)
 
-        initTextNoteComponents(valueView, textNoteLayout)
-        initAudioNoteComponents(valueView, audioRecorderLayout)
-        initImageNoteComponents(valueView, imageUploaderLayout)
+        initTextNoteComponents(v, valueView, textNoteLayout)
+        initAudioNoteComponents(v, valueView, audioRecorderLayout)
+        initImageNoteComponents(v, valueView, imageUploaderLayout)
 
         //  buttons for switching note type
         val textNoteButton = v.findViewById<ImageButton>(R.id.textNoteButton)
@@ -212,7 +222,7 @@ class NotesFragment : Fragment() {
     }
 
     // initialize components for text notes
-    private fun initTextNoteComponents(valueView: TextView, layout: LinearLayout) {
+    private fun initTextNoteComponents(v: View, valueView: TextView, layout: LinearLayout) {
         val noteEditText = v.findViewById<EditText>(R.id.noteEditText)
         val saveButton = v.findViewById<Button>(R.id.saveButton)
         val clearButton = v.findViewById<Button>(R.id.clearButton)
@@ -243,7 +253,7 @@ class NotesFragment : Fragment() {
     }
 
     // initialise components for audio notes
-    private fun initAudioNoteComponents(valueView: TextView, layout: LinearLayout) {
+    private fun initAudioNoteComponents(v: View, valueView: TextView, layout: LinearLayout) {
         recordButton = v.findViewById<Button>(R.id.recordButton)
         stopRecordButton = v.findViewById<Button>(R.id.stopRecordButton)
         cancelRecordButton = v.findViewById<Button>(R.id.cancelRecordButton)
@@ -274,7 +284,7 @@ class NotesFragment : Fragment() {
     }
 
     // initialise components for image notes
-    private fun initImageNoteComponents(valueView: TextView, layout: LinearLayout){
+    private fun initImageNoteComponents(v: View, valueView: TextView, layout: LinearLayout){
         selectButton = v.findViewById<Button>(R.id.selectButton)
         uploadButton = v.findViewById<Button>(R.id.uploadButton)
         imageTitleEditText = v.findViewById<EditText>(R.id.imageTitleEditText)
@@ -317,7 +327,7 @@ class NotesFragment : Fragment() {
     }
 
     // setup observers for ViewModel - text field will be updated when selectedDate changes
-    private fun setupObservers() {
+    private fun setupObservers(v: View) {
         val valueObserver = Observer<String> { newValue ->
             val valueView = v.findViewById<TextView>(R.id.textView)
             valueView.text = newValue
