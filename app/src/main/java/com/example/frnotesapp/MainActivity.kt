@@ -14,9 +14,8 @@ import kotlin.properties.Delegates
 class MainActivity : AppCompatActivity()  {
     private lateinit var viewModel: NotesViewModel
     private lateinit var tabLayout: TabLayout
-    private var currentTabPosition = 0
 
-    // Make isAuthenticated an observable property
+    // isAuthenticated is an observable property - its value determines the visibility of tab navigation
     var isAuthenticated by Delegates.observable(false) { _, _, newValue ->
         if(::tabLayout.isInitialized) {
             updateTabLayoutVisibility(newValue)

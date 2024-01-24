@@ -5,61 +5,88 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
 import java.lang.Float.max
-import java.lang.Integer.min
+import java.lang.Float.min
 
+// OverlayView class, inherits from View
+// for drawing bounding box of detected face over the PreviewView
 class OverlayView(context: Context, attrs: AttributeSet): View(context, attrs) {
+    // var to store bounding box of detected face
     private var faceBoundingBox: Rect? = null
+    // graphics paint object for drawing the bounding box
     private val paint = Paint()
 
     init {
-        // Style for the bounding box
+        // style for the bounding box
+        // TODO draw in green when match==true
         paint.color = Color.RED
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 5f
     }
 
+    // set a new bounding box and trigger redraw
     private fun setFaceBoundingBox(box: Rect) {
         faceBoundingBox = box
-        invalidate() // Redraw the view
+        invalidate() // causes onDraw to be called to clear and redraw the new bBox
     }
 
+    // transform and set bounding box based on view and camera dimensions
+    // this is trial and error based and does not give the exact shape of the bounding box used in the model, but is good
+    // for user experience
     fun transformAndSetFaceBoundingBox(originalBox: Rect, cameraWidth: Int, cameraHeight: Int, viewWidth: Int, viewHeight: Int) {
+        // calc scale based on the larger dimension ratio (view/camera)
         val scale = max(viewWidth.toFloat() / cameraWidth, viewHeight.toFloat() / cameraHeight)
 
+        // calc offsets for centering bounding box in the view
         val offsetX = (viewWidth - cameraWidth * scale) / 2
         val offsetY = (viewHeight - cameraHeight * scale) / 2
 
+        // mirror the bounding box horizontally (camera feed uses front camera so is mirrored)
         val mirroredLeft = cameraWidth - originalBox.right
         val mirroredRight = cameraWidth - originalBox.left
 
-        // Introduce a width reduction factor, adjust this as needed
-        val widthReduction = 0.6 // Example: Reduce width to 60% of its original
-        val heightReduction = 0.8 // Example: Reduce width to 80% of its original
+        // scale width & height of bBox
+        val scaledWidth = (mirroredRight - mirroredLeft) * scale
+        val scaledHeight = (originalBox.bottom - originalBox.top) * scale
 
+        // reduction factors for width and height - box was too large initially
+        val widthReduction = 0.5f
+        val heightReduction = 0.7f
+
+        // apply above reductions
+        val reducedWidth = scaledWidth * widthReduction
+        val reducedHeight = scaledHeight * heightReduction
+
+        // recalc right & bottom coords
+        val transformedRight = mirroredLeft * scale + offsetX + reducedWidth
+        val transformedBottom = originalBox.top * scale + offsetY + reducedHeight
+
+        // new Rect object
         val transformedBox = Rect(
-            (mirroredLeft.toFloat() * scale + offsetX).toInt(),
-            (originalBox.top.toFloat() * scale + offsetY).toInt(),
-            ((mirroredRight.toFloat() * scale + offsetX) * widthReduction).toInt(),
-            ((originalBox.bottom.toFloat() * scale + offsetY) * heightReduction).toInt()
+            (mirroredLeft * scale + offsetX).toInt(),
+            (originalBox.top * scale + offsetY).toInt(),
+            transformedRight.toInt(),
+            transformedBottom.toInt()
         )
-
+        // update the bounding box with the transformed coordinates
         setFaceBoundingBox(transformedBox)
     }
 
+    // draw the bounding box
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        // Draw the bounding box
-        faceBoundingBox?.let { canvas.drawRect(it, paint) }
 
-        /*// Draw the target oval inside the bounding box
+        // radius for rounded corners
+        val cornerRadiusX = 200f
+        val cornerRadiusY = 200f
+
         faceBoundingBox?.let {
-            val centerX = (it.left + it.right) / 2f
-            val centerY = (it.top + it.bottom) / 2f
-            val radius = min(it.width(), it.height()) / 2.5f
-            canvas.drawOval(centerX - radius, centerY - radius, centerX + radius, centerY + radius, paint)
-        }*/
+            // conversion as drawRoundRect requires RectF
+            val rectF = RectF(it)
+            canvas.drawRoundRect(rectF, cornerRadiusX, cornerRadiusY, paint)
+        }
     }
 }

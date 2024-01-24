@@ -4,29 +4,6 @@
     android:layout_height="match_parent"
     android:background="?android:attr/windowBackground">
 
-  <!--  <Button
-        android:id="@+id/preprocessMobilenetFVButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Preprocess Image for Mobilenet FV"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginTop="1dp"/>
-
-    <Button
-        android:id="@+id/preprocessMobileFacenetButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Preprocess Image for MobileFacenet"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginTop="1dp"/>
-
-    <Button
-        android:id="@+id/verificationTestButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Test Verification using MobileFacenet"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginTop="1dp"/>-->
   <androidx.camera.view.PreviewView
       android:id="@+id/viewFinder"
       android:layout_width="match_parent"
@@ -59,7 +36,5 @@
         android:layout_gravity="center_horizontal"
         android:layout_marginTop="1dp"/>
   </LinearLayout>
-
-
 
 </FrameLayout>
