@@ -106,6 +106,7 @@ class HomeFragment : Fragment() {
         captureReferenceButton.setOnClickListener {
             stopCamera = false
             captureReferenceImage = true
+            (activity as? MainActivity)?.isAuthenticated = false
             requestCameraPermission()
         }
 
@@ -115,10 +116,8 @@ class HomeFragment : Fragment() {
             // Use these dimensions for calculations
             Log.d("DIMENSIONS", "$previewWidth")
             Log.d("DIMENSIONS", "$previewHeight")
-
         }
     }// end onViewCreated
-
 
     // load TensorFlow Lite model from assets
     private fun loadModelFile(activity: Activity, modelName: String): MappedByteBuffer {
@@ -170,9 +169,10 @@ class HomeFragment : Fragment() {
     }// end onRequestPermissionsResult
 
     // starts camera for detection / verification
-    @OptIn(ExperimentalGetImage::class) private fun startCamera() {
+    @OptIn(ExperimentalGetImage::class)
+    private fun startCamera() {
         Log.d("startCamera", "Starting camera")
-        // initialise camera and bind its lifecycle to lifecycle owner (this Fragment)
+        // initialize camera and bind its lifecycle to lifecycle owner (this Fragment)
         val cameraProviderFuture = ProcessCameraProvider.getInstance(requireContext())
         cameraProviderFuture.addListener({
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
@@ -187,94 +187,91 @@ class HomeFragment : Fragment() {
             // front camera as default
             val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
 
-            // setup for skipping frames
+            // setup for frame skipping
             var frameSkipCounter = 0
-            val frameSkipRate = 5 // skip every X frames
+            val frameProcessRate = 25 // process every 25th frame
 
-            var rotationDegrees = 0
-
-            // image analyser for analyzing the camera feed, detecting faces, and running face recognition model
+            // image analyzer for analyzing the camera feed
             val imageAnalysis = ImageAnalysis.Builder()
                 .build()
                 .also {
                     it.setAnalyzer(ContextCompat.getMainExecutor(requireContext()), ImageAnalysis.Analyzer { imageProxy ->
-                        val cameraFeedWidth = imageProxy.width
-                        val cameraFeedHeight = imageProxy.height
-
-                        Log.d("DIMENSIONS", "$cameraFeedWidth")
-                        Log.d("DIMENSIONS", "$cameraFeedHeight")
-
                         if (stopCamera) {
-                            Log.e("STOP CAMERA", "stop camera is: $stopCamera")
                             imageProxy.close()
                             return@Analyzer
                         }
-                        if (frameSkipCounter != 0 && (frameSkipCounter % frameSkipRate == 0 && !isModelRunning)) {
-                            Log.e("imageAnalysis", "analysing image")
-                            rotationDegrees = imageProxy.imageInfo.rotationDegrees
-                            val mediaImage = imageProxy.image
-                            Log.d("startCamera", "Image format: ${mediaImage?.format}")
-                            if (mediaImage != null) {
-                                Log.e("imageAnalysis", "checkpoint 2")
-                                val inputImage = InputImage.fromMediaImage(mediaImage, rotationDegrees)
-                                val detector = FaceDetection.getClient()
-                                detector.process(inputImage)
-                                    .addOnSuccessListener { faces ->
-                                        if (faces.isNotEmpty()) {
-                                            val boundingBox = faces[0].boundingBox
+
+                        val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+                        val mediaImage = imageProxy.image
+
+                        if (mediaImage != null) {
+                            val inputImage = InputImage.fromMediaImage(mediaImage, rotationDegrees)
+                            val detector = FaceDetection.getClient()
+                            detector.process(inputImage)
+                                .addOnSuccessListener { faces ->
+                                    // draw bounding box for every frame
+                                    if (faces.isNotEmpty()) {
+                                        val boundingBox = faces[0].boundingBox
+                                        overlayView.transformAndSetFaceBoundingBox(
+                                            boundingBox,
+                                            imageProxy.width,
+                                            imageProxy.height,
+                                            viewFinder.width,
+                                            viewFinder.height,
+                                            20f,
+                                            false
+                                        )
+                                    }
+
+                                    // process image every 25 frames
+                                    if (frameSkipCounter % frameProcessRate == 0 && !isModelRunning && faces.isNotEmpty()) {
+                                        val boundingBox = faces[0].boundingBox
+                                        if (captureReferenceImage) {
                                             overlayView.transformAndSetFaceBoundingBox(
                                                 boundingBox,
                                                 imageProxy.width,
                                                 imageProxy.height,
                                                 viewFinder.width,
-                                                viewFinder.height
+                                                viewFinder.height,
+                                                20f,
+                                                true
                                             )
-                                            croppedFaceForVerification = cropBitmap(mediaImage, boundingBox, rotationDegrees)
-                                            val preprocessedImage = preprocessImageMobileFacenet(croppedFaceForVerification, 112)
-                                            runMobileFaceNetOnCameraImage(preprocessedImage)
-                                        } else {
-                                            isModelRunning = false
-                                            Log.d("DETECTION", "No face detected")
                                         }
-                                        Log.d("DETECTION", "onSuccessListener entered: detection attempt complete")
+                                        else{
+                                            overlayView.transformAndSetFaceBoundingBox(
+                                                boundingBox,
+                                                imageProxy.width,
+                                                imageProxy.height,
+                                                viewFinder.width,
+                                                viewFinder.height,
+                                                50f,
+                                                true
+                                            )
+                                        }
+
+                                        croppedFaceForVerification = cropBitmap(mediaImage, boundingBox, rotationDegrees)
+                                        val preprocessedImage = preprocessImageMobileFacenet(croppedFaceForVerification, 112)
+                                        runMobileFaceNetOnCameraImage(preprocessedImage)
                                     }
-                                    .addOnFailureListener { e ->
-                                        // TODO - properly handle failure
-                                        Log.e("DETECTION", "onFailureListener entered: ${e.message}")
-                                    }
-                                    .addOnCompleteListener {
-                                        // close the imageProxy once complete
-                                        imageProxy.close()
-                                        Log.e("DETECTION", "onCompleteListener entered")
-                                    }
-                            } else {
-                                // close imageProxy if mediaImage==null
-                                imageProxy.close()
-                                Log.e("imageAnalysis", "checkpoint 5")
-                            }
+                                }
+                                .addOnFailureListener { e ->
+                                    Log.e("DETECTION", "onFailureListener entered: ${e.message}")
+                                }
+                                .addOnCompleteListener {
+                                    imageProxy.close()
+                                }
                         } else {
-                            // close the ImageProxy to avoid memory leaks
                             imageProxy.close()
                         }
-                        // increment counter
                         frameSkipCounter = (frameSkipCounter + 1) % 10000
-
-                        // log every 25 frames
-                        if (frameSkipCounter % 25 == 0) {
-                            Log.e("Counter", "FRAME: $frameSkipCounter")
-                            Log.e("Counter", "Is Model Running?: $isModelRunning")
-                        }
                     })
-                }//end image analyser
+                }
 
             try {
-                // unbind camera before rebinding
                 cameraProvider.unbindAll()
                 isModelRunning = false
-                // bind use cases to camera
                 cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
-                Log.e("imageAnalysis", "checkpoint 6")
-            } catch(exc: Exception) {
+            } catch (exc: Exception) {
                 Log.e("Camera", "Use case binding failed", exc)
             }
 
@@ -452,5 +449,4 @@ class HomeFragment : Fragment() {
         // return dot product divided by the product of the vectors norms (cosine similarity)
         return dotProduct / (sqrt(normVec1) * sqrt(normVec2))
     }// end calculateCosineSimilarity
-
 }// end class HomeFragment

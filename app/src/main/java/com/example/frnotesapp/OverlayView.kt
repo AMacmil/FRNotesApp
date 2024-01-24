@@ -7,6 +7,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.util.AttributeSet
+import android.util.Log
 import android.view.View
 import java.lang.Float.max
 import java.lang.Float.min
@@ -21,25 +22,26 @@ class OverlayView(context: Context, attrs: AttributeSet): View(context, attrs) {
 
     init {
         // style for the bounding box
-        // TODO draw in green when match==true
         paint.color = Color.RED
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 5f
     }
 
-    // set a new bounding box and trigger redraw
-    private fun setFaceBoundingBox(box: Rect) {
+    // set a new bounding box and trigger redraw in green or red
+    private fun setFaceBoundingBox(box: Rect, green: Boolean) {
         faceBoundingBox = box
+        paint.color = if (green) Color.GREEN else Color.RED
         invalidate() // causes onDraw to be called to clear and redraw the new bBox
     }
 
     // transform and set bounding box based on view and camera dimensions
     // this is trial and error based and does not give the exact shape of the bounding box used in the model, but is good
     // for user experience
-    fun transformAndSetFaceBoundingBox(originalBox: Rect, cameraWidth: Int, cameraHeight: Int, viewWidth: Int, viewHeight: Int) {
+    fun transformAndSetFaceBoundingBox(originalBox: Rect, cameraWidth: Int, cameraHeight: Int, viewWidth: Int, viewHeight: Int, verticalAdjustment: Float, green: Boolean) {
+
         // calc scale based on the larger dimension ratio (view/camera)
         val scale = max(viewWidth.toFloat() / cameraWidth, viewHeight.toFloat() / cameraHeight)
-
+        Log.d("RECT", "$originalBox")
         // calc offsets for centering bounding box in the view
         val offsetX = (viewWidth - cameraWidth * scale) / 2
         val offsetY = (viewHeight - cameraHeight * scale) / 2
@@ -54,7 +56,7 @@ class OverlayView(context: Context, attrs: AttributeSet): View(context, attrs) {
 
         // reduction factors for width and height - box was too large initially
         val widthReduction = 0.5f
-        val heightReduction = 0.7f
+        val heightReduction = 0.75f
 
         // apply above reductions
         val reducedWidth = scaledWidth * widthReduction
@@ -62,18 +64,18 @@ class OverlayView(context: Context, attrs: AttributeSet): View(context, attrs) {
 
         // recalc right & bottom coords
         val transformedRight = mirroredLeft * scale + offsetX + reducedWidth
-        val transformedBottom = originalBox.top * scale + offsetY + reducedHeight
+        val transformedBottom = originalBox.top * scale + offsetY + reducedHeight - verticalAdjustment * scale
 
         // new Rect object
         val transformedBox = Rect(
             (mirroredLeft * scale + offsetX).toInt(),
-            (originalBox.top * scale + offsetY).toInt(),
+            (originalBox.top * scale + offsetY - verticalAdjustment * scale).toInt(),
             transformedRight.toInt(),
             transformedBottom.toInt()
         )
         // update the bounding box with the transformed coordinates
-        setFaceBoundingBox(transformedBox)
-    }
+        setFaceBoundingBox(transformedBox, green)
+    }// end transformAndSetFaceBoundingBox
 
     // draw the bounding box
     override fun onDraw(canvas: Canvas) {
@@ -88,5 +90,5 @@ class OverlayView(context: Context, attrs: AttributeSet): View(context, attrs) {
             val rectF = RectF(it)
             canvas.drawRoundRect(rectF, cornerRadiusX, cornerRadiusY, paint)
         }
-    }
-}
+    }// end onDraw
+}// end class
