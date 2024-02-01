@@ -16,6 +16,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.Toast
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
@@ -48,6 +49,11 @@ class HomeFragment : Fragment() {
     private lateinit var viewFinder: PreviewView
     // OverlayView for drawing bounding box
     private lateinit var overlayView : OverlayView
+
+
+    private lateinit var croppedImageView: ImageView
+    private lateinit var croppedRefImageView: ImageView
+
 
     // TensorFlow Lite interpreter for running the TensorFlow Lite models
     private lateinit var tfliteMobilenet: Interpreter
@@ -92,6 +98,9 @@ class HomeFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         loadMobileFacenetModel(requireActivity())
+
+        croppedImageView = view.findViewById(R.id.croppedImageView)
+        croppedRefImageView = view.findViewById(R.id.croppedRefImageView)
 
         viewFinder = view.findViewById(R.id.viewFinder)
         overlayView = view.findViewById(R.id.overlay)
@@ -171,7 +180,7 @@ class HomeFragment : Fragment() {
     // starts camera for detection / verification
     @OptIn(ExperimentalGetImage::class)
     private fun startCamera() {
-        Log.d("startCamera", "Starting camera")
+        Log.d("startCamera", "Starting camera using Androidx Camera")
         // initialize camera and bind its lifecycle to lifecycle owner (this Fragment)
         val cameraProviderFuture = ProcessCameraProvider.getInstance(requireContext())
         cameraProviderFuture.addListener({
@@ -206,29 +215,51 @@ class HomeFragment : Fragment() {
 
                         if (mediaImage != null) {
                             val inputImage = InputImage.fromMediaImage(mediaImage, rotationDegrees)
+                            Log.e("DETECTION", "Detecting Face Using MLKit's FaceDetection")
                             val detector = FaceDetection.getClient()
                             detector.process(inputImage)
                                 .addOnSuccessListener { faces ->
                                     // draw bounding box for every frame
                                     if (faces.isNotEmpty()) {
                                         val boundingBox = faces[0].boundingBox
+
+                                        val shrinkFactor = 0.2 // 0.2==20% etc
+                                        val widthReduction = (boundingBox.width() * shrinkFactor).toInt()
+                                        val heightReduction = (boundingBox.height() * shrinkFactor).toInt()
+                                        val adjustedBox = Rect(
+                                            boundingBox.left + widthReduction,
+                                            boundingBox.top + heightReduction,
+                                            boundingBox.right - widthReduction,
+                                            boundingBox.bottom - heightReduction
+                                        )
                                         overlayView.transformAndSetFaceBoundingBox(
-                                            boundingBox,
+                                            adjustedBox,
                                             imageProxy.width,
                                             imageProxy.height,
                                             viewFinder.width,
                                             viewFinder.height,
                                             20f,
-                                            false
+                                            true
                                         )
                                     }
 
                                     // process image every 25 frames
                                     if (frameSkipCounter % frameProcessRate == 0 && !isModelRunning && faces.isNotEmpty()) {
                                         val boundingBox = faces[0].boundingBox
+
+                                        val shrinkFactor = 0.2 // 0.2==20% etc
+                                        val widthReduction = (boundingBox.width() * shrinkFactor).toInt()
+                                        val heightReduction = (boundingBox.height() * shrinkFactor).toInt()
+                                        val adjustedBox = Rect(
+                                            boundingBox.left + widthReduction,
+                                            boundingBox.top + heightReduction,
+                                            boundingBox.right - widthReduction,
+                                            boundingBox.bottom - heightReduction
+                                        )
+
                                         if (captureReferenceImage) {
                                             overlayView.transformAndSetFaceBoundingBox(
-                                                boundingBox,
+                                                adjustedBox,
                                                 imageProxy.width,
                                                 imageProxy.height,
                                                 viewFinder.width,
@@ -239,7 +270,7 @@ class HomeFragment : Fragment() {
                                         }
                                         else{
                                             overlayView.transformAndSetFaceBoundingBox(
-                                                boundingBox,
+                                                adjustedBox,
                                                 imageProxy.width,
                                                 imageProxy.height,
                                                 viewFinder.width,
@@ -249,7 +280,7 @@ class HomeFragment : Fragment() {
                                             )
                                         }
 
-                                        croppedFaceForVerification = cropBitmap(mediaImage, boundingBox, rotationDegrees)
+                                        croppedFaceForVerification = cropBitmap(mediaImage, adjustedBox, rotationDegrees)
                                         val preprocessedImage = preprocessImageMobileFacenet(croppedFaceForVerification, 112)
                                         runMobileFaceNetOnCameraImage(preprocessedImage)
                                     }
@@ -310,13 +341,15 @@ class HomeFragment : Fragment() {
         }
 
         // compare feature vectors to determine a match based on cosine similarity
-        // TODO base match on more than just cosine similarity?
+        // TODO base match on more than just cosine similarity + euclidean distance?
         val similarity = calculateCosineSimilarity(newImageFeatures, comparisonVector)
-        val isMatch = similarity > MATCH_THRESHOLD
+        val distance = euclideanDistance(newImageFeatures, comparisonVector)
+        val isCosineMatch = similarity > COSINE_MATCH_THRESHOLD
+        val isEuclideanMatch = distance < EUCLIDEAN_MATCH_THRESHOLD
 
-        Log.d("VerificationTest", "Similarity: $similarity, Match: $isMatch")
+        Log.d("VerificationTest", "Similarity: $similarity, Cosine Match: $isCosineMatch, Distance: $distance, Euclidean Match: $isEuclideanMatch")
 
-        if (isMatch) {
+        if (isCosineMatch && isEuclideanMatch) {
             // show toast, stop camera, and set isAuthenticated to true
             Toast.makeText(context, "Match found!", Toast.LENGTH_SHORT).show()
             stopCamera = true
@@ -372,14 +405,30 @@ class HomeFragment : Fragment() {
             boundingBox.bottom.coerceAtMost(rotatedBitmap.height)
         )
 
-        // crop bitmap to the adjusted bBox
-        return Bitmap.createBitmap(
+        // Crop bitmap to the adjusted bounding box
+        val croppedBitmap = Bitmap.createBitmap(
             rotatedBitmap,
             adjustedBox.left,
             adjustedBox.top,
             adjustedBox.width(),
             adjustedBox.height()
         )
+
+        if(captureReferenceImage){
+            activity?.runOnUiThread {
+                croppedRefImageView.setImageBitmap(croppedBitmap)
+                croppedRefImageView.visibility = View.VISIBLE // Make the ImageView visible
+            }
+        }
+        else{
+            // Update ImageView on UI thread
+            activity?.runOnUiThread {
+                croppedImageView.setImageBitmap(croppedBitmap)
+                croppedImageView.visibility = View.VISIBLE // Make the ImageView visible
+            }
+        }
+
+        return croppedBitmap
     }// end cropBitmap
 
     // process image for use with the MobileFaceNet model
@@ -408,8 +457,8 @@ class HomeFragment : Fragment() {
     }// end preprocessImageMobileFacenet
 
     companion object {
-        private const val MATCH_THRESHOLD = 0.7
-        // TODO - fine tune this, maybe add more e.g. EUCLIDEAN_MATCH_THRESHOLD / COSINE_MATCH...
+        private const val COSINE_MATCH_THRESHOLD = 0.7
+        private const val EUCLIDEAN_MATCH_THRESHOLD = 0.5
     }
 
     // calc Euclidean distance between two feature vectors
