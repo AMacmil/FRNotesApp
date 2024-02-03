@@ -97,7 +97,12 @@ class HomeFragment : Fragment() {
     // lifecycle method called after the view is created
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        storedFeatureVector = viewModel.databaseAdapter.dbHelper.getFeatureVector(1)
+
         loadMobileFacenetModel(requireActivity())
+
+
 
         croppedImageView = view.findViewById(R.id.croppedImageView)
         croppedRefImageView = view.findViewById(R.id.croppedRefImageView)
@@ -198,7 +203,7 @@ class HomeFragment : Fragment() {
 
             // setup for frame skipping
             var frameSkipCounter = 0
-            val frameProcessRate = 25 // process every 25th frame
+            val frameProcessRate = 5 // process every nth frame
 
             // image analyzer for analyzing the camera feed
             val imageAnalysis = ImageAnalysis.Builder()
@@ -223,7 +228,7 @@ class HomeFragment : Fragment() {
                                     if (faces.isNotEmpty()) {
                                         val boundingBox = faces[0].boundingBox
 
-                                        val shrinkFactor = 0.2 // 0.2==20% etc
+                                        val shrinkFactor = 0.05 // 0.2==20% etc
                                         val widthReduction = (boundingBox.width() * shrinkFactor).toInt()
                                         val heightReduction = (boundingBox.height() * shrinkFactor).toInt()
                                         val adjustedBox = Rect(
@@ -243,7 +248,7 @@ class HomeFragment : Fragment() {
                                         )
                                     }
 
-                                    // process image every 25 frames
+                                    // process image every n frames
                                     if (frameSkipCounter % frameProcessRate == 0 && !isModelRunning && faces.isNotEmpty()) {
                                         val boundingBox = faces[0].boundingBox
 
@@ -328,6 +333,7 @@ class HomeFragment : Fragment() {
         if (captureReferenceImage) {
             captureReferenceImage=false
             storedFeatureVector = newImageFeatures
+            viewModel.databaseAdapter.dbHelper.addFeatureVector(newImageFeatures)
             Log.e("CURRENT", "reference features stored")
             stopCamera = true
             stopCamera()
@@ -458,7 +464,7 @@ class HomeFragment : Fragment() {
 
     companion object {
         private const val COSINE_MATCH_THRESHOLD = 0.7
-        private const val EUCLIDEAN_MATCH_THRESHOLD = 0.5
+        private const val EUCLIDEAN_MATCH_THRESHOLD = 0.7
     }
 
     // calc Euclidean distance between two feature vectors

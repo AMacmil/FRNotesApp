@@ -51,6 +51,10 @@ class MainActivity : AppCompatActivity()  {
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
 
+        if (supportActionBar != null) {
+            supportActionBar?.title = "";
+        }
+
         // initialize TabLayout and add titled tabs
         tabLayout = findViewById<TabLayout>(R.id.tab_layout)
         tabLayout.addTab(tabLayout.newTab().setText(R.string.tab_page1))

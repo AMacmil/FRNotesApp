@@ -7,6 +7,7 @@ import android.database.SQLException
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.util.Log
+import java.nio.ByteBuffer
 
 class DBAdapter(private val dbContext: Context) {
     // internal DatabaseHelper for managing db creation
@@ -17,8 +18,9 @@ class DBAdapter(private val dbContext: Context) {
 
     // companion object to hold database schema info
     companion object {
-        private const val DATABASE_VERSION = 1
-        private const val DATABASE_NAME = "NotesDB"
+        private const val DATABASE_VERSION = 2
+        private const val DATABASE_NAME = "AppDB"
+
         const val TABLE_NAME = "notes"
         const val COLUMN_ID = "id"
         const val COLUMN_TEXT_NOTE = "text_note"
@@ -26,6 +28,11 @@ class DBAdapter(private val dbContext: Context) {
         const val COLUMN_IMAGE_PATH = "image_path"
         const val COLUMN_NOTE_TYPE = "note_type"
         const val COLUMN_DATE_CREATED = "date_created"
+
+        // table and column names for feature vectors
+        const val TABLE_FEATURES = "features"
+        const val COLUMN_FEATURE_ID = "id"
+        const val COLUMN_FEATURE_VECTOR = "feature_vector"
     }
 
     // function to open the database
@@ -35,9 +42,15 @@ class DBAdapter(private val dbContext: Context) {
         return this
     }
 
+    fun close() {
+        dbHelper.close()
+    }
+
     // function to drop the notes table and all data
     fun dropTable() {
         db.execSQL("DROP TABLE IF EXISTS $TABLE_NAME")
+
+        db.execSQL("DROP TABLE IF EXISTS $TABLE_FEATURES")
     }
 
     // function to recreate the notes table.
@@ -60,20 +73,43 @@ class DBAdapter(private val dbContext: Context) {
     internal inner class DatabaseHelper(context: Context?) :
         SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
         override fun onCreate(db: SQLiteDatabase) {
+            createNotesTable(db)
+            createFeaturesTable(db)
+        }
+
+        private fun createNotesTable(db: SQLiteDatabase) {
             val CREATE_TABLE_QUERY =
-                "CREATE TABLE $TABLE_NAME (" +
-                        "$COLUMN_ID INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                        "$COLUMN_TEXT_NOTE TEXT, " +
-                        "$COLUMN_VOICE_NOTE_PATH TEXT, " +
-                        "$COLUMN_IMAGE_PATH TEXT, " +
-                        "$COLUMN_NOTE_TYPE TEXT, " +
-                        "$COLUMN_DATE_CREATED DATETIME DEFAULT CURRENT_TIMESTAMP)"
+                """
+                CREATE TABLE $TABLE_NAME (
+                    $COLUMN_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    $COLUMN_TEXT_NOTE TEXT,
+                    $COLUMN_VOICE_NOTE_PATH TEXT,
+                    $COLUMN_IMAGE_PATH TEXT,
+                    $COLUMN_NOTE_TYPE TEXT,
+                    $COLUMN_DATE_CREATED DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+                """.trimIndent()
             db.execSQL(CREATE_TABLE_QUERY)
+        }
+
+        private fun createFeaturesTable(db: SQLiteDatabase) {
+            val CREATE_FEATURES_TABLE_QUERY =
+                """
+                CREATE TABLE $TABLE_FEATURES (
+                    $COLUMN_FEATURE_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    $COLUMN_FEATURE_VECTOR BLOB
+                )
+                """.trimIndent()
+            db.execSQL(CREATE_FEATURES_TABLE_QUERY)
         }
 
         // called when the database needs to be upgraded
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
             db.execSQL("DROP TABLE IF EXISTS $TABLE_NAME")
+            onCreate(db)
+
+            // Drop the features table if exists
+            db.execSQL("DROP TABLE IF EXISTS $TABLE_FEATURES")
             onCreate(db)
         }
 
@@ -101,7 +137,6 @@ class DBAdapter(private val dbContext: Context) {
             // get writable db instance & insert values into table
             val db = this.writableDatabase
             db.insert(TABLE_NAME, null, values)
-            db.close()
         }
 
         // retrieve all notes from the db
@@ -120,5 +155,40 @@ class DBAdapter(private val dbContext: Context) {
             cursor.close()
             return exists
         }
+
+        fun addFeatureVector(featureVector: FloatArray) {
+            val vectorBlob = floatArrayToBlob(featureVector)
+            val values = ContentValues()
+            values.put(COLUMN_FEATURE_VECTOR, vectorBlob)
+
+            val db = this.writableDatabase
+            db.insert(TABLE_FEATURES, null, values)
+        }
+
+        fun getFeatureVector(id: Int): FloatArray? {
+            val db = this.readableDatabase
+            val cursor = db.rawQuery("SELECT $COLUMN_FEATURE_VECTOR FROM $TABLE_FEATURES WHERE $COLUMN_FEATURE_ID = ?", arrayOf(id.toString()))
+
+            if (cursor.moveToFirst()) {
+                val blob = cursor.getBlob(cursor.getColumnIndexOrThrow(COLUMN_FEATURE_VECTOR))
+                cursor.close()
+                return blobToFloatArray(blob)
+            }
+            cursor.close()
+            return null
+        }
+
+        private fun floatArrayToBlob(array: FloatArray): ByteArray {
+            val buffer = ByteBuffer.allocate(array.size * 4)
+            buffer.asFloatBuffer().put(array)
+            return buffer.array()
+        }
+
+        private fun blobToFloatArray(blob: ByteArray): FloatArray {
+            val buffer = ByteBuffer.wrap(blob)
+            val floatArray = FloatArray(blob.size / 4)
+            buffer.asFloatBuffer().get(floatArray)
+            return floatArray
+        }
     }
-}
+    }
